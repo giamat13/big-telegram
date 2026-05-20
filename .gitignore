@@ -3,3 +3,5 @@ pending_messages.json
 *.session
 *.session-journal
 runall.bat
+*.ahk
+*.exe
