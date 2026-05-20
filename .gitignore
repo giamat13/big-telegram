@@ -5,3 +5,7 @@ pending_messages.json
 runall.bat
 *.ahk
 *.exe
+build/
+dist/
+*.spec
+__pycache__/
