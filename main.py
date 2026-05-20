@@ -25,8 +25,9 @@ from pathlib import Path
 
 # ─── הגדרות ביפ ───────────────────────────────────────────────────────────────
 BEEP_FREQUENCY  = 1000   # Hz
-BEEP_DURATION   = 500    # מילישניות
-BEEP_INTERVAL   = 1.0    # שניות בין ביפ לביפ
+BEEP_DURATION   = 200    # מילישניות
+BEEP_INTERVAL   = 0.4    # שניות בין ביפ לביפ
+BEEP_CHECK_READ = 5.0    # שניות בין בדיקות אם נקרא
 
 try:
     from telethon import TelegramClient, events
@@ -70,32 +71,29 @@ def save_message(cfg, sender_name: str, sender_id: int, text: str):
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
 # ─── צפצוף ────────────────────────────────────────────────────────────────────
-def _is_show_message_running() -> bool:
-    """בודק אם show_message.py רץ כרגע."""
+def _all_messages_read(cfg) -> bool:
+    """מחזיר True אם כל ההודעות בקובץ נקראו."""
+    msg_file = SCRIPT_DIR / cfg["messages_file"]
+    if not msg_file.exists():
+        return True
     try:
-        result = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq python.exe", "/FO", "CSV"],
-            capture_output=True, text=True
-        ) if platform.system() == "Windows" else subprocess.run(
-            ["pgrep", "-f", "show_message.py"],
-            capture_output=True
-        )
-        if platform.system() == "Windows":
-            # בדוק בפועל אם show_message.py בשורת הפקודה
-            result2 = subprocess.run(
-                ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-                capture_output=True, text=True
-            )
-            return "show_message.py" in result2.stdout
-        return result.returncode == 0
+        with open(msg_file, encoding="utf-8") as f:
+            messages = json.load(f)
+        return all(m.get("seen", False) for m in messages)
     except Exception:
-        return False
+        return True
 
 
-def beep_until_show_message():
-    """מצפצף ברציפות עד שshow_message.py נפתח."""
+def beep_until_read(cfg):
+    """מצפצף ברציפות, בודק כל 5 שניות אם ההודעות נקראו."""
     def _loop():
-        while not _is_show_message_running():
+        last_check = 0
+        while True:
+            now = time.time()
+            if now - last_check >= BEEP_CHECK_READ:
+                if _all_messages_read(cfg):
+                    return
+                last_check = now
             if platform.system() == "Windows":
                 import winsound
                 winsound.Beep(BEEP_FREQUENCY, BEEP_DURATION)
@@ -188,7 +186,7 @@ async def main():
         
         # שמור + צפצף
         save_message(cfg, sender_name, sender.id, text)
-        beep_until_show_message()
+        beep_until_read(cfg)
     
     await client.start()
     print("✅ מחובר לטלגרם. ממתין להודעות... (Ctrl+C לעצירה)\n")
