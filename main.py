@@ -23,6 +23,11 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+# ─── הגדרות ביפ ───────────────────────────────────────────────────────────────
+BEEP_FREQUENCY  = 1000   # Hz
+BEEP_DURATION   = 500    # מילישניות
+BEEP_INTERVAL   = 1.0    # שניות בין ביפ לביפ
+
 try:
     from telethon import TelegramClient, events
     from telethon.tl.types import User
@@ -65,28 +70,44 @@ def save_message(cfg, sender_name: str, sender_id: int, text: str):
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
 # ─── צפצוף ────────────────────────────────────────────────────────────────────
-def beep(frequency: int, duration_ms: int, repeat: int):
-    """מנגן צפצוף – עובד על Windows, macOS, Linux."""
-    def _beep():
-        for i in range(repeat):
+def _is_show_message_running() -> bool:
+    """בודק אם show_message.py רץ כרגע."""
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq python.exe", "/FO", "CSV"],
+            capture_output=True, text=True
+        ) if platform.system() == "Windows" else subprocess.run(
+            ["pgrep", "-f", "show_message.py"],
+            capture_output=True
+        )
+        if platform.system() == "Windows":
+            # בדוק בפועל אם show_message.py בשורת הפקודה
+            result2 = subprocess.run(
+                ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+                capture_output=True, text=True
+            )
+            return "show_message.py" in result2.stdout
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def beep_until_show_message():
+    """מצפצף ברציפות עד שshow_message.py נפתח."""
+    def _loop():
+        while not _is_show_message_running():
             if platform.system() == "Windows":
                 import winsound
-                winsound.Beep(frequency, duration_ms)
-            elif platform.system() == "Darwin":  # macOS
-                os.system(f"osascript -e 'beep {repeat}'")
-                return  # osascript כבר מטפל בחזרה
-            else:  # Linux
-                # נסה beep, אם לא קיים – השתמש ב-speaker-test
-                ret = os.system(f"beep -f {frequency} -l {duration_ms} 2>/dev/null")
+                winsound.Beep(BEEP_FREQUENCY, BEEP_DURATION)
+            elif platform.system() == "Darwin":
+                os.system("osascript -e 'beep'")
+            else:
+                ret = os.system(f"beep -f {BEEP_FREQUENCY} -l {BEEP_DURATION} 2>/dev/null")
                 if ret != 0:
-                    os.system(f"python3 -c \""
-                              f"import subprocess; subprocess.run(['paplay', '/usr/share/sounds/freedesktop/stereo/message.oga'], "
-                              f"capture_output=True)\"")
-            if i < repeat - 1:
-                time.sleep(0.3)
-    
-    t = threading.Thread(target=_beep, daemon=True)
-    t.start()
+                    os.system("paplay /usr/share/sounds/freedesktop/stereo/message.oga 2>/dev/null")
+            time.sleep(BEEP_INTERVAL)
+
+    threading.Thread(target=_loop, daemon=True).start()
 
 # ─── האזנה ל-F8 ───────────────────────────────────────────────────────────────
 def start_hotkey_listener():
@@ -124,7 +145,6 @@ async def main():
         sys.exit(1)
     
     watched_raw = [str(c).lower().strip() for c in cfg.get("watched_contacts", [])]
-    beep_cfg    = cfg.get("beep", {"frequency": 1000, "duration_ms": 500, "repeat": 3})
     session     = SCRIPT_DIR / cfg.get("session_name", "telegram_monitor")
     
     start_hotkey_listener()
@@ -168,7 +188,7 @@ async def main():
         
         # שמור + צפצף
         save_message(cfg, sender_name, sender.id, text)
-        beep(beep_cfg["frequency"], beep_cfg["duration_ms"], beep_cfg["repeat"])
+        beep_until_show_message()
     
     await client.start()
     print("✅ מחובר לטלגרם. ממתין להודעות... (Ctrl+C לעצירה)\n")
