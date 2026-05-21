@@ -119,28 +119,41 @@ def _do_beep_loop(cfg):
         time.sleep(BEEP_INTERVAL)
 
 
+RETRY_ABSENT_INTERVAL = 60   # שניות בין ניסיונות חוזרים כשהמשתמש לא נוכח
+
 def beep_if_user_present(cfg):
     """
     שומר מיקום עכבר, מחכה 10 שניות, ובודק אם זז.
     אם זז → המשתמש ליד המחשב → מפעיל צפצופים.
-    אם לא זז → מבטל (המשתמש לא ליד המחשב).
+    אם לא זז → ממתין 60 שניות ומנסה שוב, עד שכל ההודעות נקראו.
     """
     def _check_and_beep():
-        pos_before = _get_mouse_position()
-        if pos_before is None:
-            print("⚠️  לא ניתן לקרוא מיקום עכבר – מפעיל צפצופים ישירות.")
-            _do_beep_loop(cfg)
-            return
+        attempt = 0
+        while True:
+            # אם בינתיים כל ההודעות נקראו – לא צריך לצפצף
+            if _all_messages_read(cfg):
+                print("🔕 כל ההודעות נקראו – ביטול בדיקת נוכחות.")
+                return
 
-        print(f"🖱️  מיקום עכבר נשמר: {pos_before}. ממתין {MOUSE_CHECK_DELAY} שניות...")
-        time.sleep(MOUSE_CHECK_DELAY)
+            attempt += 1
+            pos_before = _get_mouse_position()
+            if pos_before is None:
+                print("⚠️  לא ניתן לקרוא מיקום עכבר – מפעיל צפצופים ישירות.")
+                _do_beep_loop(cfg)
+                return
 
-        pos_after = _get_mouse_position()
-        if pos_after is None or pos_after != pos_before:
-            print(f"✅ העכבר זז ({pos_before} → {pos_after}) – המשתמש ליד המחשב. מתחיל צפצופים.")
-            _do_beep_loop(cfg)
-        else:
-            print("🔕 העכבר לא זז – המשתמש לא ליד המחשב. הצפצוף בוטל.")
+            print(f"🖱️  [ניסיון {attempt}] מיקום עכבר נשמר: {pos_before}. ממתין {MOUSE_CHECK_DELAY} שניות...")
+            time.sleep(MOUSE_CHECK_DELAY)
+
+            pos_after = _get_mouse_position()
+            if pos_after is None or pos_after != pos_before:
+                print(f"✅ העכבר זז ({pos_before} → {pos_after}) – המשתמש ליד המחשב. מתחיל צפצופים.")
+                _do_beep_loop(cfg)
+                return
+            else:
+                print(f"🔕 [ניסיון {attempt}] העכבר לא זז – המשתמש לא ליד המחשב. "
+                      f"ינסה שוב בעוד {RETRY_ABSENT_INTERVAL} שניות...")
+                time.sleep(RETRY_ABSENT_INTERVAL)
 
     threading.Thread(target=_check_and_beep, daemon=True).start()
 
