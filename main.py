@@ -73,6 +73,8 @@ def save_message(cfg, sender_name: str, sender_id: int, text: str):
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
 # ─── צפצוף ────────────────────────────────────────────────────────────────────
+MOUSE_CHECK_DELAY = 10   # שניות להמתנה לפני בדיקת תנועת עכבר
+
 def _all_messages_read(cfg) -> bool:
     """מחזיר True אם כל ההודעות בקובץ נקראו."""
     msg_file = SCRIPT_DIR / cfg["messages_file"]
@@ -86,28 +88,61 @@ def _all_messages_read(cfg) -> bool:
         return True
 
 
-def beep_once(cfg):
-    """מצפצף פעם אחת."""
-    def _beep():
-        last_check = 0
-        while True:
-            now = time.time()
-            if now - last_check >= BEEP_CHECK_READ:
-                if _all_messages_read(cfg):
-                    return
-                last_check = now
-            if platform.system() == "Windows":
-                import winsound
-                winsound.Beep(BEEP_FREQUENCY, BEEP_DURATION)
-            elif platform.system() == "Darwin":
-                os.system("osascript -e 'beep'")
-            else:
-                ret = os.system(f"beep -f {BEEP_FREQUENCY} -l {BEEP_DURATION} 2>/dev/null")
-                if ret != 0:
-                    os.system("paplay /usr/share/sounds/freedesktop/stereo/message.oga 2>/dev/null")
-            time.sleep(BEEP_INTERVAL)
-    
-    threading.Thread(target=_beep, daemon=True).start()
+def _get_mouse_position():
+    """מחזיר את מיקום העכבר הנוכחי, או None אם לא ניתן."""
+    try:
+        from pynput import mouse as pynput_mouse
+        return pynput_mouse.Controller().position
+    except Exception:
+        return None
+
+
+def _do_beep_loop(cfg):
+    """לולאת הצפצופים – רצה כל עוד יש הודעות לא-נקראות."""
+    last_check = 0
+    while True:
+        now = time.time()
+        if now - last_check >= BEEP_CHECK_READ:
+            if _all_messages_read(cfg):
+                print("🔕 כל ההודעות נקראו – הצפצופים נעצרו.")
+                return
+            last_check = now
+        if platform.system() == "Windows":
+            import winsound
+            winsound.Beep(BEEP_FREQUENCY, BEEP_DURATION)
+        elif platform.system() == "Darwin":
+            os.system("osascript -e 'beep'")
+        else:
+            ret = os.system(f"beep -f {BEEP_FREQUENCY} -l {BEEP_DURATION} 2>/dev/null")
+            if ret != 0:
+                os.system("paplay /usr/share/sounds/freedesktop/stereo/message.oga 2>/dev/null")
+        time.sleep(BEEP_INTERVAL)
+
+
+def beep_if_user_present(cfg):
+    """
+    שומר מיקום עכבר, מחכה 10 שניות, ובודק אם זז.
+    אם זז → המשתמש ליד המחשב → מפעיל צפצופים.
+    אם לא זז → מבטל (המשתמש לא ליד המחשב).
+    """
+    def _check_and_beep():
+        pos_before = _get_mouse_position()
+        if pos_before is None:
+            print("⚠️  לא ניתן לקרוא מיקום עכבר – מפעיל צפצופים ישירות.")
+            _do_beep_loop(cfg)
+            return
+
+        print(f"🖱️  מיקום עכבר נשמר: {pos_before}. ממתין {MOUSE_CHECK_DELAY} שניות...")
+        time.sleep(MOUSE_CHECK_DELAY)
+
+        pos_after = _get_mouse_position()
+        if pos_after is None or pos_after != pos_before:
+            print(f"✅ העכבר זז ({pos_before} → {pos_after}) – המשתמש ליד המחשב. מתחיל צפצופים.")
+            _do_beep_loop(cfg)
+        else:
+            print("🔕 העכבר לא זז – המשתמש לא ליד המחשב. הצפצוף בוטל.")
+
+    threading.Thread(target=_check_and_beep, daemon=True).start()
 
 # ─── האזנה ל-F8 ───────────────────────────────────────────────────────────────
 def start_hotkey_listener():
@@ -186,9 +221,9 @@ async def main():
         print(f"\n🔔 [{datetime.now().strftime('%H:%M:%S')}] הודעה מ-{sender_name}:")
         print(f"   {text[:120]}{'...' if len(text) > 120 else ''}")
         
-        # שמור + צפצף
+        # שמור + בדוק נוכחות → צפצף
         save_message(cfg, sender_name, sender.id, text)
-        beep_once(cfg)
+        beep_if_user_present(cfg)
     
     await client.start()
     print("✅ מחובר לטלגרם. ממתין להודעות... (Ctrl+C לעצירה)\n")
