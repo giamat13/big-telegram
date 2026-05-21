@@ -36,6 +36,8 @@ except ImportError:
     print("❌ חסרה ספרייה. הרץ: pip install telethon")
     sys.exit(1)
 
+
+
 # ─── טעינת קונפיג ─────────────────────────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "config.json"
@@ -84,9 +86,9 @@ def _all_messages_read(cfg) -> bool:
         return True
 
 
-def beep_until_read(cfg):
-    """מצפצף ברציפות, בודק כל 5 שניות אם ההודעות נקראו."""
-    def _loop():
+def beep_once(cfg):
+    """מצפצף פעם אחת."""
+    def _beep():
         last_check = 0
         while True:
             now = time.time()
@@ -104,8 +106,8 @@ def beep_until_read(cfg):
                 if ret != 0:
                     os.system("paplay /usr/share/sounds/freedesktop/stereo/message.oga 2>/dev/null")
             time.sleep(BEEP_INTERVAL)
-
-    threading.Thread(target=_loop, daemon=True).start()
+    
+    threading.Thread(target=_beep, daemon=True).start()
 
 # ─── האזנה ל-F8 ───────────────────────────────────────────────────────────────
 def start_hotkey_listener():
@@ -186,7 +188,7 @@ async def main():
         
         # שמור + צפצף
         save_message(cfg, sender_name, sender.id, text)
-        beep_until_read(cfg)
+        beep_once(cfg)
     
     await client.start()
     print("✅ מחובר לטלגרם. ממתין להודעות... (Ctrl+C לעצירה)\n")

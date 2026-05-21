@@ -190,6 +190,7 @@ class MessageViewer:
             self.lbl_time.config(text="")
             self.lbl_counter.config(text="")
             self.btn_seen.config(state=tk.DISABLED)
+            print("✅ כל ההודעות נקראו - הצפצופים אמורים להיעצר")
             return
 
         msg = self.unseen[self.index]
@@ -208,6 +209,7 @@ class MessageViewer:
         self.lbl_counter.config(
             text=f"הודעה {self.index + 1} מתוך {len(self.unseen)} לא-נראות")
         self.btn_seen.config(state=tk.NORMAL)
+        print(f"💬 מציג הודעה {self.index + 1}/{len(self.unseen)} מ-{msg.get('sender_name', '?')}")
 
     # ── פעולות ─────────────────────────────────────────────────────────────────
     def _mark_seen_and_next(self):
@@ -221,6 +223,7 @@ class MessageViewer:
                 m["seen"] = True
                 break
         save_messages(self.msg_file, self.messages)
+        print(f"✅ הודעה סומנה כנראתה מ-{msg.get('sender_name', '?')}")
 
         self.unseen.pop(self.index)
         if self.unseen:
@@ -231,6 +234,7 @@ class MessageViewer:
         for m in self.messages:
             m["seen"] = True
         save_messages(self.msg_file, self.messages)
+        print(f"✅ כל {len(self.unseen)} ההודעות סומנו כנראו")
         self.unseen.clear()
         self.index = 0
         self._show_current()
